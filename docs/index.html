@@ -1,0 +1,670 @@
+<html>
+  <head>
+    <title>Property-based testing</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Fira+Mono:400,500,700&display=swap);
+
+      body {
+        font-family: 'Droid Serif';
+      }
+
+      p {
+        font-size: 24px;
+      }
+
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+
+      .gray {
+        color: gray;
+      }
+
+      .remark-code, .remark-inline-code {
+        font-family: 'Fira Mono', monospace;
+        font-size: 16px;
+        line-height: 1.5em;
+        text-shadow: none;
+        border-radius: 5px;
+      }
+
+      .remark-code-line-highlighted {
+        background-color: rgba(0, 255, 240, 0.4);
+      }
+
+      .remark-notes, p {
+        font-size: 20px;
+      }
+
+      .remark-notes-preview p {
+        font-size: 18px;
+      }
+
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+
+
+class: center, middle
+# Property-based testing
+
+### Highly based in Fred Hebert's </br> _Property-Based Testing with PropEr, Erlang, and Elixir_
+
+
+---
+class: center, middle
+# Why do we test?
+
+???
+Antes que nada: ¿por qué testeamos?
+En el fondo tiene que ver con generar confianza y de quedarnos
+tranquilos en que nuestro programa se comporta como queremos.
+
+La cagada es que, la mayoría del tiempo, es un embole escribir test.
+
+
+---
+## Sounds familiar?
+### Example-based testing
+
+```elixir
+test "starts_with?/2" do
+  assert starts_with?("foo", "f")
+  refute starts_with?("foo", "b")
+  assert starts_with?("foo", "")
+  assert starts_with?("", "")
+  refute starts_with?("", "something")
+end
+```
+
+???
+En general terminamos haciendo cosas como estas. Básicamente pensamos en un
+par de casos y verificacmos que se cumplan.
+
+Acá, por ejemplo, queremos probar la función `starts_with?` que recibe dos
+strings y se fija que el primero empiece como el segundo. ¿Entonces que hago?
+Pruebo con algún caso que funcione, alguno que no, y algunos casos borde
+
+Pero, ¿con cuántos ejemplos probamos? ¿Cuándo nos quedamos tranquilos?
+
+
+---
+### Actual test in Erlang
+```erlang
+merge_test() ->
+	[] = merge([]),
+	[] = merge([[]]),
+	[] = merge([[],[]]),
+	[] = merge([[],[],[]]),
+	[1] = merge([[1]]),
+	[1,1,2,2] = merge([[1,2],[1,2]]),
+	[1] = merge([[1],[],[]]),
+	[1] = merge([[],[1],[]]),
+	[1] = merge([[],[],[1]]),
+	[1,2] = merge([[1],[2],[]]),
+	[1,2] = merge([[1],[],[2]]),
+	[1,2] = merge([[],[1],[2]]),
+	[1,2,3,4,5,6] = merge([[1,2],[],[5,6],[],[3,4],[]]),
+	[1,2,3,4] = merge([[4],[3],[2],[1]]),
+	[1,2,3,4,5] = merge([[1],[2],[3],[4],[5]]),
+	[1,2,3,4,5,6] = merge([[1],[2],[3],[4],[5],[6]]), [1,2,3,4,5,6,7,8,9] = merge([[1],[2],[3],[4],[5],[6],[7],[8],[9]]), Seq = seq(1,100),
+	true = Seq == merge(map(fun(E) -> [E] end, Seq)),
+	ok.
+```
+
+???
+De hecho, este es un test real en el código fuente de Erlang en el que no voy
+a detenerme mucho pero que claramante se ve bastante tedioso.
+
+Seguramente el programador se tuvo que poner a pensar en un montón de casos
+posibles.
+
+Y quizás, si lo miraba un poco más, se le ocurrían diez o veinte ejemplos más
+para agregar.
+
+---
+class: center, middle
+# Could we do this better?
+
+???
+Y si hubiera alguna forma de automatizar esto y que la maquina pensara en los
+ejemplos por nosotros?
+
+
+---
+# QuickCheck
+
+* John Hughes and Koen Clasessen
+
+* Paper and library for Haskell in 2000
+
+* It becomes very popular in the community
+
+???
+Bueno, esta pregunta se la hicierion allá por el 2000 estos dos flacos que
+publican un paper al respecto y una bibliotaca para Haskell llamada
+_QuickCheck_. Se vuelve sumamente popular en la comunidad y de hecho hoy en
+día es la forma predominante de testear en el ecosistema de Haskell.
+
+Igual, más allá de ser muy popular en los paradigmas funcionales, esta
+modalidad de testear es independiente del lenguaje e incluso existen paquetes
+para C, Python, Ruby, Javascript, etc.
+
+
+---
+class: center, middle
+# So, what is property-based testing?
+
+???
+Todo muy lindo pero, qué carajo es property based testing?
+
+La joda es que vos pensás en un conjunto de reglas que se deben cumplir
+independientemente de la entrada (propiedades), y la suite se encarga de
+generar ejemplos por vos y verificar que la cumplen.
+
+
+---
+## Property-based testing
+
+```
+for all (x, y, …)
+
+such as precondition(x, y, …) holds
+
+property(x, y, …) is true.
+```
+
+???
+Tienen una pinta más o menos así
+
+
+---
+count: false
+
+## Property-based testing
+
+```
+*for all (x, y, …)
+
+such as precondition(x, y, …) holds
+
+property(x, y, …) is true.
+```
+
+???
+Esto lo que dice es para todo input _x, y, etc_ (que luego se termina
+traduciendo en: elegímelos al azar muchas veces) y para generar esos inputs
+al azar el framework incluye algo llamado generadores.
+
+Esto varía entre librería y librería pero en general siempre están los más
+comunes: enteros, string, listas de algunos de esos elementos. Y que además
+los puedo combinar e incluso escribir mis propios generadores.
+
+
+---
+count: false
+
+## Property-based testing
+
+```
+for all (x, y, …)
+
+*such as precondition(x, y, …) holds
+
+property(x, y, …) is true.
+```
+
+???
+Siguiendo:
+
+Tal que x, y, etc cumplen con determinada condicion (ser enteros positivos,
+ser listas no vacías, strings de determinada longitud, etc)
+
+
+---
+count: false
+
+## Property-based testing
+
+```
+for all (x, y, …)
+
+such as precondition(x, y, …) holds
+
+*property(x, y, …) is true.
+```
+
+???
+Y lo último es verificar que la propiedad para esos datos es cierta
+
+Acá lo interesante es que si encuentra un input que no se cumple, el
+framework nos devuelve el caso que falló pero con cierta magia: intenta
+achicar ese input hasta encontrar el mínimo equivalente que sigue fallando
+
+Esto es porque debuggear un caso que falló con datos generados al azar puede
+ser hasta imposible
+
+
+---
+## Property-based testing
+### An example using Elixir and StreamData
+
+```elixir
+property "the in/2 operator works with lists" do
+  check all list <- list_of(integer()),
+            list != [],
+            elem <- member_of(list) do
+    assert elem in list
+  end
+end
+```
+
+???
+Aunque el libro en el que me basé usa una librería de Erlang, la gente de
+Elixir está escribiendo la suya propia y, aunque está muy verde, planean en
+algún momento empezar a usarla en sus propios test y es la que voy a estar
+usando yo en los ejemplos
+
+Ellos creen que incluyendo una librería estándar para hacer property based
+testing va a alentar a los programadores a testear de esta forma
+
+* Explicar lo que hace el codigo *
+
+
+---
+## StreamData
+
+### StreamData
+
+```elixir
+Enum.take(StreamData.integer(), 3)
+#=> [1, -1, -3]
+```
+
+
+### ExUnitProperties
+
+```elixir
+property "starts_with?/2" do
+  check all a <- StreamData.binary(),
+            b <- StreamData.binary() do
+    assert starts_with?(a <> b, a)
+  end
+end
+```
+
+???
+StreamData tiene estos dos módulos: uno que se llama igual que la librería
+que se encarga de proveernos los generadors y formas de combinarlos
+
+El otro implementa un par de macros que podemos usar en los test, siendo la
+macro `check` la más importante. Otra medio chota es `property` que es un
+sustito al `test` del `ExUnit.Case`
+
+---
+class: center, middle
+# How to think in properties
+
+???
+¿Cómo cambiamos la cabeza para pasar a pensar en propiedades?
+El autor sugiere tres técnicas para ir acostumbrándose que vamos a ver en un
+ratito
+
+
+---
+# How to think in properties
+## Modeling
+
+```elixir
+property "sort/1 returns a sorted list" do
+  check all list <- list_of(integer())
+    assert MySuperEnum.sort(list) == Enum.sort(list)
+  end
+end
+```
+
+???
+La primera de ellas es _modeling_
+
+Modeling básicamente es re-escribir una versión más simple (y generalmente no
+tan performante) de lo que querés testear. Luego, podés enfocarte en
+optimizar la función verdadera tanto como quieras y quedarte tranquilo de que
+sigue funcionando.
+
+Es lo primero que intentamos porque es lo más fácil, aunque en general no
+escala demasiado. En la mayoría de los casos no podemos escribir una versión
+alternativa que haga lo mismo que la original.
+
+Sin embargo, y por poner un ejemplo, quizás tenés una función para ordenar
+listas que usa un algoritmo super loco pero que anda volando y ahí lo podrías
+testear contra la funcion `sort` nativa del lenguaje.
+
+
+---
+# How to think in properties
+
+.gray[
+  ## Modeling
+]
+
+## Generalizing
+
+???
+El segundo truco que podemos probar es generalizar
+
+Podés arrancar escribiendo algunos ejemplos y luego pensar en una forma de
+abstraerlos en un caso general.
+
+
+---
+# How to think in properties
+## Generalizing
+
+```elixir
+test "last/1 returns the last element in a list" do
+  assert -23 == List.last([-23])
+  assert 5 == List.last([1,2,3,4,5])
+  assert 3 == List.last([5,4,3])
+end
+```
+
+
+---
+# How to think in properties
+## Generalizing
+
+```
+1. Construct a list by picking a bunch of numbers:
+  * Pick a first number.
+  * ...
+  * Pick a last number.
+
+2. Take note of the last number in the list as the expected one.
+
+3. Check that the value expected is the obtained.
+```
+
+???
+* Hacer el cuentito *
+
+---
+# How to think in properties
+## Generalizing
+
+```elixir
+property "last/1 returns the last element in a list" do
+  check all list <- list(integer),
+            known_last_number <- integer do
+
+    known_list = list ++ [known_last_number]
+    assert known_last_number == List.last(known_list)
+  end
+end
+```
+
+???
+Así sería la implementación en Elixir y medio que gratis (con cuatro líneas
+locas de código) terminamos testeando lo mismo con cientos de datos.
+
+---
+count: false
+
+# How to think in properties
+## Generalizing
+
+```elixir
+property "last/1 returns the last element in a list" do
+* check all list <- list(integer),
+*           known_last_number <- integer do
+
+    known_list = list ++ [known_last_number]
+    assert known_last_number == List.last(known_list)
+  end
+end
+```
+
+
+---
+count: false
+
+# How to think in properties
+## Generalizing
+
+```elixir
+property "last/1 returns the last element in a list" do
+  check all list <- list(integer),
+            known_last_number <- integer do
+
+*   known_list = list ++ [known_last_number]
+    assert known_last_number == List.last(known_list)
+  end
+end
+```
+
+
+---
+count: false
+
+# How to think in properties
+## Generalizing
+
+```elixir
+property "last/1 returns the last element in a list" do
+  check all list <- list(integer),
+            known_last_number <- integer do
+
+    known_list = list ++ [known_last_number]
+*   assert known_last_number == List.last(known_list)
+  end
+end
+```
+
+
+---
+# How to think in properties
+
+.gray[
+  ## Modeling
+  ## Generalizing
+]
+## Invariants
+
+???
+Y bueno, ahora se empieza a poner un poco más turbio y es el lugar donde la
+gente que encara en esto la tiene bien clara.
+
+Algunas funciones son complejas de describir. Sin embargo, podemos
+identificar condiciones o hechos que son siempre verdaderos.
+
+Por ejemplo, quizás es difícil decir por qué una comida está buena, pero
+quizás podemos tener algunos criterios como: no está muy salada, la
+temperatura estaba adecuada, no estaba cruda, etc.
+
+
+---
+# How to think in properties
+## Invariants
+```
+1. A store cannot sell more items than it has in stock.
+
+2. Each number in a sorted list is smaller (or equal to) than the one that
+follows.
+
+3. Once you insert a record in a database, you should be able to read it
+back.
+```
+
+???
+* comentar los casos *
+
+Estas son verdades absolutas de nuestra realidad aunque en general no es
+suficiente. Ahora, si podemos encontrar unas cuantas podemos empezar a tener
+más confianza en nuestro codigo
+
+`List.sort` es un buen ejemplo para pensar en invariantes.
+
+Podríamos pensar en algo de la forma "una lista ordenada tiene todos sus
+elementos ordenados de menor a mayor".
+
+En vez de eso, podemos intentar separarlo en partes más chiquitas.
+
+
+---
+# How to think in properties
+## Invariants
+#### Which properties are always true for a sorted list?
+
+```
+1. Each number in a sorted list is smaller (or equal to) than the one that
+follows
+
+2. The sorted and unsorted list should both have the same size
+
+3. Any element in the sorted list has to have its equivalent in the unsorted list
+
+4. Any element in the unsorted list has to have its equivalent in the sorted list
+```
+
+
+---
+#### 1. Each number in a sorted list is smaller than the one that follows
+
+```elixir
+property "a sorted list has ordered pairs" do
+  check all list <- list_of(term()) do
+    assert is_ordered(Enum.sort(list))
+  end
+end
+
+defp is_ordered([a, b | tail]), do: a <= b && is_ordered([b | tail])
+defp is_ordered(_), do: true
+```
+
+???
+El problema que tiene esto es que si nuestra implementación de `sort` lo
+único que hace es devolver una lista vacía, este test pasa
+
+Por eso es que necesitamos incluir varias
+
+--
+count: false
+
+#### 2. The sorted and unsorted list should both have the same size
+```elixir
+property "a sorted list keeps its size" do
+  check all list <- list_of(term()) do
+    assert length(list) == length(Enum.sort(list))
+  end
+end
+```
+
+---
+#### 3. Any element in the sorted list has to have its equivalent in the unsorted list
+```elixir
+property "no element added" do
+  check all list <- list_of(term()) do
+    sorted = Enum.sort(list)
+    assert Enum.all?(sorted, fn element -> element in list end)
+  end
+end
+```
+
+#### 4. Any element in the unsorted list has to have its equivalent in the sorted list
+```elixir
+property "no element deleted" do
+  check all list <- list_of(term()) do
+    sorted = Enum.sort(list)
+    assert Enum.all?(list, fn element -> element in sorted end)
+  end
+end
+```
+
+
+---
+# How to think in properties
+## Invariants
+### Symmetric properties
+
+```elixir
+property "encode and decode returns the same" do
+  check all text <- string() do
+      assert text == text |> encode |> decode
+  end
+end
+```
+
+```elixir
+property "reverse a list twice returns the same list" do
+  check all list <- list_of(term()) do
+      assert list == list |> Enum.reverse |> Enum.reverse
+  end
+end
+```
+
+
+---
+# How to think in properties
+## Wrapping up
+
+### Modeling
+### Generalizing
+### Invariants
+
+
+???
+Ahora en teoría conocemos muchas formas de generar propiedades.
+
+Vimos que podemos modelar nuestro sistema de una forma alternativa y checkear
+que las dos funcionan igual. Tambien vimos que los test basados en ejemplos
+pueden generalizarse para que el framework los escriba por nosotros.
+
+Por último, vimos que un montón de invariantes pequeñas pueden combinarse
+para tener casos de test más sólidos y además que podemos sacar provecho de
+las propiedades siméticas.
+
+Quizás lo que queda por ver más en profundidad es como pulir los generadores
+para que los casos que abarquen sean más relevantes
+
+Enseguida vamos a notar que con los generadores por defecto nos quedamos
+cortos.
+
+---
+class: center, middle
+# Property-based development?
+
+
+---
+# Thanks!
+### Questions?
+
+
+
+**Ignacio Aguirrezabal** | _Software developer at WyeWorks_
+
+
+* **`Email`**: `talk@iaguirre.dev`
+* **`Github`**: `iaguirre88`
+* **`Twitter`**: `@iaguirre88`
+
+
+
+
+
+    </textarea>
+    <script src="https://remarkjs.com/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create({
+	ratio: '4:3',
+	highlightStyle: 'gruvbox-dark',
+	highlightLines: true,
+      });
+    </script>
+  </body>
+</html>
